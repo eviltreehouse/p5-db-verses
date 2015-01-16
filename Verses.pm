@@ -92,10 +92,14 @@ SKEL
 
 
 {
-	no strict;
-	*{'main::' . 'migrate'} = *{'Verses::' . 'migrate'};
-	*{'main::' . 'rollback'} = *{'Verses::' . 'rollback'};
-	*{'main::' . 'plan'}    = *{'Verses::' . 'plan'};
+	no strict 'refs';
+
+	#
+	# Assemble cmds in main scope to simply cmdline perl -e invocation
+	#
+	foreach my $cmd (qw/migrate rollback plan init/) {
+		*{'main::' . $cmd} = *{'Verses::' . $cmd};
+	}
 }
 
 1;
