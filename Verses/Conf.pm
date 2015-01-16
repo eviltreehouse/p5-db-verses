@@ -65,8 +65,8 @@ sub get {
 		my $tag = shift @_;
 		my $ele = shift @_;
 
-		if (length $self->{'tagged'}{lc $ele}) {
-			return $self->{'tagged'}{lc $ele};
+		if (length $self->{'tagged'}{$tag}{lc $ele}) {
+			return $self->{'tagged'}{$tag}{lc $ele};
 		} else {
 			return $self->{'conf'}{lc $ele};
 		}
