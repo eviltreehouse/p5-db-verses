@@ -13,6 +13,9 @@ sub down {
 	print "no down.";
 }
 
+sub db {
+	return Verses::db_handle();
+}
 
 
 1;
