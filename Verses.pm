@@ -6,14 +6,15 @@ require Cwd;
 require Verses::Conf;
 
 require Verses::Engine::MySQL;
+require Verses::Plan;
 #require Verses::Engine::SQLite;
 
 my @SUPPORTED_ENGINES = qw/mysql sqlite/;
 my %ENGINES;
 
-my $CONF;
-my $DBH;
-my $ENGINE;
+our $CONF;
+our $DBH;
+our $ENGINE;
 
 sub migrate {
 	conf();
@@ -31,9 +32,6 @@ sub migrate {
 		exit 1;
 	}
 
-	print $ENGINE;
-	exit 0;
-
 	foreach my $planFile (get_plans()) {
 		my $planClass = $planFile;
 		$planClass =~ s/\.v$//g;
@@ -42,10 +40,20 @@ sub migrate {
 		do File::Spec->catfile( get_plan_dir(), $planFile );
 		if ($@) {
 			print "[X] $planFile\n";
+			print $@;
 		} else {
 			my $plan = $planClass->new();
-			$plan->up();
-			print "[+] $planFile\n";
+			
+			eval {
+				$plan->up();
+			};
+
+			if ($@) {
+				print "[X] $planFile\n";
+				print $@;
+			} else {
+				print "[+] $planFile\n";
+			}
 		}
 	}
 }
@@ -214,11 +222,13 @@ sub new { my \$c = shift \@_; return \$c->SUPER::new(\@_); }
 
 sub up {
 	# Define your migration plan HERE:
+	my \$plan = shift \@_;
 
 }
 
 sub down {
 	# Define your de-migration plan HERE:
+	my \$plan = shift \@_;
 
 }
 SKEL
