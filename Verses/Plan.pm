@@ -4,6 +4,9 @@ use strict;
 my $ACTION;
 my %ADJ;
 my $CONTEXT = 'def';
+my $CTXLOCK = 0;
+
+my @AQUEUE = ();
 
 sub new {
 	my $self = bless({}, $_[0]);
@@ -26,7 +29,7 @@ sub db {
 sub _reset_action {
 	undef $ACTION;
 	%ADJ    = ();
-	$CONTEXT = 'def';
+	$CONTEXT = $CTXLOCK ? $CONTEXT : 'def';
 }
 
 sub _engine {
@@ -43,6 +46,27 @@ sub _dbh {
 
 sub _kill_plan {
 	$_[0]->{'alive'} = 0;
+}
+
+sub _queue_actions {
+	my $self = shift @_;
+	$CTXLOCK = 1;
+	@AQUEUE = ();
+	$self->{'_queue'} = 1;
+}
+
+sub _queued {
+	my $self = shift @_;
+	my @copy = @AQUEUE;
+	$self->{'_queue'} = 0;
+	@AQUEUE = ();
+
+	$CTXLOCK = 0;
+	return @copy;
+}
+
+sub _set_context {
+	$CONTEXT = $_[1];
 }
 
 sub AUTOLOAD {
@@ -62,15 +86,32 @@ sub AUTOLOAD {
 		$plan->_kill_plan();
 		die "Unexpected: $cmd";
 	} elsif (ref $ret) {
-		$ACTION = $ret->{'action'} if exists $ret->{'action'};
-		$CONTEXT = $ret->{'ctx'} if exists $ret->{'ctx'};
-
-		foreach my $k ( %{ $ret->{'adj'} } ) {
+		foreach my $k ( keys %{ $ret->{'adj'} } ) {
+			#print "$k => " . $ret->{'adj'}{$k};
 			$ADJ{$k} = $ret->{'adj'}{$k};
 		}
-	} elsif ($ret == 1) {
-		# Cmd end.
-		# Actually parse the cmd and do something.
+
+		if ($ret->{'done'}) {
+			# Parse/Execute the command..
+			my $ret = _engine()->parse($plan, $CONTEXT, $ACTION, \%ADJ);
+			if ($ret) {
+				if ($plan-{"_queue"}) {
+					push (@AQUEUE, $ret);
+				} else {
+					print "RUN QUERY: $ret\n";
+					my $qret = _engine()->execute($ret);
+					if (! defined $qret) {
+						die _engine->db_err( _engine->db_handle );
+					}
+				}
+			}
+
+			# And do the next one..
+			$plan->_reset_action();
+		} else {
+			$ACTION = $ret->{'action'} if exists $ret->{'action'};
+			$CONTEXT = $ret->{'ctx'} if exists $ret->{'ctx'};
+		}
 	}
 
 	return $plan; 

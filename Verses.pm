@@ -15,6 +15,9 @@ my %ENGINES;
 our $CONF;
 our $DBH;
 our $ENGINE;
+our $TAG;
+
+my $verbose = 0;
 
 sub migrate {
 	conf();
@@ -32,6 +35,11 @@ sub migrate {
 		exit 1;
 	}
 
+	if (! db_handle()) {
+		print "[!] Unable to establish a connection to the database!\n";
+		exit 1;
+	}
+
 	foreach my $planFile (get_plans()) {
 		my $planClass = $planFile;
 		$planClass =~ s/\.v$//g;
@@ -43,14 +51,17 @@ sub migrate {
 			print $@;
 		} else {
 			my $plan = $planClass->new();
+
+			#$SIG{__DIE__} = sub { print "[X] KA-BOOM! " . @_; print "*Shrugs*"; }; 
 			
 			eval {
 				$plan->up();
 			};
 
+			#$SIG{__DIE__} = undef;
+
 			if ($@) {
-				print "[X] $planFile\n";
-				print $@;
+				print "[X] $planFile: " . _swave($@) . "\n";
 			} else {
 				print "[+] $planFile\n";
 			}
@@ -140,6 +151,8 @@ sub load_engine {
 sub register_engine {
 	my $tag = shift @_;
 	my $class = shift @_;
+
+	$verbose && print "register_engine() $tag => $class\n";
 
 	$ENGINES{$tag} = $class;
 }
@@ -249,6 +262,13 @@ database database-name
 
 CONF
 ;
+}
+
+sub _swave {
+	my $msg = shift @_;
+
+	$msg =~ s/at [A-Za-z0-9_\.\/\\]+ line \d+\.$//;
+	return $msg;
 }
 
 {
