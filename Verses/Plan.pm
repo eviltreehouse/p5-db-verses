@@ -95,13 +95,14 @@ sub AUTOLOAD {
 			# Parse/Execute the command..
 			my $ret = _engine()->parse($plan, $CONTEXT, $ACTION, \%ADJ);
 			if ($ret) {
-				if ($plan-{"_queue"}) {
+				if ($plan->{"_queue"}) {
 					push (@AQUEUE, $ret);
 				} else {
 					print "RUN QUERY: $ret\n";
-					my $qret = _engine()->execute($ret);
+					my $qret = _engine->execute($ret);
+
 					if (! defined $qret) {
-						die _engine->db_err( _engine->db_handle );
+						die _engine->db_err( _dbh() );
 					}
 				}
 			}

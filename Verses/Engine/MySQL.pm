@@ -246,7 +246,8 @@ sub db_handle {
 
 	my $dbh = DBI->connect($dbi, $username, $password, \%handle_opts);
 
-	return $dbh && $dbh->ping ? $dbh : undef;
+	return undef unless $dbh && $dbh->ping;
+	return $dbh;
 }
 
 sub db_err {

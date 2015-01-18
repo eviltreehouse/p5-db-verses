@@ -265,8 +265,8 @@ CONF
 }
 
 sub _swave {
-	my $msg = shift @_;
-
+	my $msg = shift @_;	return $msg;
+	
 	$msg =~ s/at [A-Za-z0-9_\.\/\\]+ line \d+\.$//;
 	return $msg;
 }

@@ -17,8 +17,9 @@ sub execute {
 	my $self = shift @_;
 	my $query = shift;
 
-	my $sth = $self->db_handle->prepare($query);
+	my $sth = $Verses::DBH->prepare($query);
 	my $ret = $sth->execute();
+
 	return defined $ret ? 1 : undef;
 }
 
@@ -42,7 +43,7 @@ sub _ensure {
 }
 
 sub db_handle {
-	return undef;
+	return $Verses::DBH;
 }
 
 sub db_err {
