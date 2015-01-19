@@ -33,29 +33,7 @@ sub migrate {
 		}
 	}
 
-	if (! ref $CONF) {
-		print "[!] Unable to load Verses configuration file (.db-verses). Have you run 'init'?\n";
-		exit 1;
-	}
-
-	load_engine( $CONF->get('engine') );
-	if (! $ENGINE) {
-		print "[!] Unable to load migration engine: " . $CONF->get('engine') . "\n";
-		print "[!] Ensure the library files for Verses are up-to-date and that your engine is supported\n";
-		print "[!] Supported engines are: " . join(", ", sort @SUPPORTED_ENGINES) . "\n";
-		exit 1;
-	}
-
-	if (! db_handle()) {
-		print "[!] Unable to establish a connection to the database!\n";
-		exit 1;
-	}
-
-	if (! defined $ENGINE->prepare()) {
-		print "[!] Database engine could not initialize itself for migration status storage. Ensure this user can " .
-			  "INSERT INTO the migration table and/or this user can CREATE tables.\n";
-		exit 1;
-	}
+	sanity_check();
 
 	my @to_run = ();
 	my %has_run = map { $_->[1] => $_->[0] } $ENGINE->migration_history();
@@ -109,7 +87,77 @@ sub migrate {
 }
 
 sub rollback {
-	print "Rollback!\n";
+	my $to_roll = 1;
+
+	if (int @_) {
+		foreach my $arg (@_) {
+			if ($arg =~ m/^\d+$/) {
+				$to_roll = $arg;
+			} elsif ($arg =~ m/^\w+$/) {
+				$TAG = $arg;
+			}
+		}
+	}
+
+	sanity_check();
+
+	my @to_roll = ();
+	my @to_roll_iters = ();
+	my @history = $ENGINE->migration_history();
+	my $last_iter = 0;
+
+	foreach (@history) {
+		$last_iter = $_->[0] if $_->[0] > $last_iter;
+	}
+
+	foreach my $i (0..($to_roll-1)) {
+		my $nv = $last_iter - $i;
+		if ($nv > 0) {
+			push(@to_roll_iters, $nv);
+		}
+	}
+
+	my %rb_iter;
+
+	foreach my $iter (reverse sort @to_roll_iters) {
+		# Make sure we run these backwards.
+		foreach my $h (reverse @history) {
+			if ($h->[0] == $iter) {
+				push (@to_roll, $h->[1]);
+				$rb_iter{$h->[1]} = $iter;
+			}
+		}
+	}
+
+	if (! int @to_roll) {
+		print "[.] Nothing to rollback.\n";
+	}
+
+	#print "[>] Rolling back ITERs: " . join(",", reverse sort @to_roll_iters) . " (plans: " . join(",", @to_roll) . ")\n";
+	foreach my $planStub (@to_roll) {
+		my $planClass = "Verses\:\:Plan\:\:$planStub";
+
+		do File::Spec->catfile( get_plan_dir(), "$planStub.v" );
+		if ($@) {
+			print "[X] $planStub\n";
+			print $@;
+		} else {
+			my $plan = $planClass->new();
+
+			eval {
+				$plan->down();
+			};
+
+			if ($@) {
+				print "[X] $planStub: " . _swave($@) . "\n";
+			} else {
+				$ENGINE->rollback_migration($rb_iter{$planStub} => $planStub);
+				print "[v] $planStub\n";
+			}
+		}
+	}
+
+	exit 0;
 }
 
 sub plan {
@@ -166,6 +214,33 @@ sub init {
 	}
 
 	exit 0;
+}
+
+sub sanity_check {
+	conf();
+	if (! ref $CONF) {
+		print "[!] Unable to load Verses configuration file (.db-verses). Have you run 'init'?\n";
+		exit 1;
+	}
+
+	load_engine( $CONF->get('engine') );
+	if (! $ENGINE) {
+		print "[!] Unable to load migration engine: " . $CONF->get('engine') . "\n";
+		print "[!] Ensure the library files for Verses are up-to-date and that your engine is supported\n";
+		print "[!] Supported engines are: " . join(", ", sort @SUPPORTED_ENGINES) . "\n";
+		exit 1;
+	}
+
+	if (! db_handle()) {
+		print "[!] Unable to establish a connection to the database!\n";
+		exit 1;
+	}
+
+	if (! defined $ENGINE->prepare()) {
+		print "[!] Database engine could not initialize itself for migration status storage. Ensure this user can " .
+			  "INSERT INTO the migration table and/or this user can CREATE tables.\n";
+		exit 1;
+	}
 }
 
 sub db_handle {

@@ -29,6 +29,10 @@ sub record_migration {
 	return undef;
 }
 
+sub rollback_migration {
+	return undef;
+}
+
 sub get_iteration {
 	return 0;
 }

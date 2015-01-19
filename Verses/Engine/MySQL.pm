@@ -11,7 +11,7 @@ my %legal_ctx_def =
 (
 	'create' => "*create->create",
 	'alter'  => "*alter",
-	"drop"   => "*drop",
+	"drop"   => "*drop->drop",
 	"rename" => "*rename",
 );
 
@@ -20,6 +20,13 @@ my %legal_ctx_create =
 	'table'  => "table!",
 	'if_not_exists' => "if_not_exists"
 );
+
+my %legal_ctx_drop = 
+(
+	'table'  => "table!",
+	'if_exists' => "if_exists"
+);
+
 
 my %legal_ctx_tbuild = 
 (
@@ -49,12 +56,15 @@ my %legal_ctx_tbuild =
 my %req_arguments_ctx_def =
 (
 	'alter'  => [qw/tableName/],
-	'drop'   => [qw/tableName/],
 	'rename' => [qw/tableSrc tableDest/]
 );
 
 my %req_arguments_ctx_create = (
 	'table'  => [qw/tableName tableBuilder/],
+);
+
+my %req_arguments_ctx_drop = (
+	'table'  => [qw/tableName/],
 );
 
 my %req_arguments_ctx_tbuild =
@@ -87,6 +97,9 @@ sub evaluate {
 	} elsif ($ctx eq 'tbuild') {
 		%legal = %legal_ctx_tbuild;
 		%req_arguments = %req_arguments_ctx_tbuild;		
+	} elsif ($ctx eq 'drop') {
+		%legal = %legal_ctx_drop;
+		%req_arguments = %req_arguments_ctx_drop;		
 	}
 
 	my $token = lc $token;
@@ -181,6 +194,8 @@ sub parse {
 		print "DEF: $def\n";
 		#return "addcol: " . $r_adj->{'as'}{'colName'};
 		return $def;
+	} elsif ($action eq 'drop') {
+		return $self->_action_drop($plan, %$r_adj);
 	} else {
 		die "Unhandled action '$action'";
 	}
@@ -217,6 +232,24 @@ sub _action_create {
 	push(@q, $adj{'table'}{'tableName'}, "(");
 	push(@q, join(",\n", @cols));
 	push(@q, ")");
+
+	return join(" ", @q);
+}
+
+sub _action_drop {
+	my $self = shift @_;
+	my $plan = shift @_;
+	my %adj  = @_;
+
+	my @q = qw/DROP TABLE/;
+
+	$self->_ensure('FAILED', $adj{'table'}); $self->_ensure('Bad Table Name', $adj{'table'}{'tableName'}, '^[A-Za-z0-9_]+$');
+
+	if ($adj{'if_exists'}) {
+		push(@q, qw/IF EXISTS/);
+	}
+
+	push (@q, $adj{'table'}{'tableName'});
 
 	return join(" ", @q);
 }
@@ -371,7 +404,7 @@ sub get_iteration {
 sub migration_history {
 	my $self = shift;
 
-	my $q = "SELECT iteration,migration FROM $MIG_TABLENAME ORDER BY iteration;";
+	my $q = "SELECT iteration,migration FROM $MIG_TABLENAME ORDER BY iteration, migration;";
 	my $sth = Verses::db_handle->prepare($q);
 	$sth->execute();
 
@@ -400,6 +433,24 @@ sub record_migration {
 	}
 
 	return 1;
+}
+
+sub rollback_migration {
+	my $self      = shift @_;
+	my $iteration = shift @_;
+	my @migs      = @_;
+
+	my $dbh = Verses::db_handle;
+
+	foreach my $mig (@migs) {
+		my $q = "DELETE FROM $MIG_TABLENAME WHERE iteration=? AND migration=?;";
+		my $sth = $dbh->prepare($q);
+		if (! $sth->execute($iteration, $mig)) {
+			return undef;
+		}
+	}
+
+	return 1;	
 }
 
 sub supported {
