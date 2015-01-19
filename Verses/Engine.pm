@@ -13,6 +13,26 @@ sub evaluate {
 	die ref($Verses::ENGINE) . " did not properly evaluate this migration plan!";
 }
 
+sub supported {
+	return 1;
+}
+
+sub prepare {
+	return undef;
+}
+
+sub migration_history {
+	return undef;
+}
+
+sub record_migration {
+	return undef;
+}
+
+sub get_iteration {
+	return 0;
+}
+
 sub execute {
 	my $self = shift @_;
 	my $query = shift;

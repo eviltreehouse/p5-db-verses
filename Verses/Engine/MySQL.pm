@@ -5,6 +5,8 @@ use base qw/Verses::Engine/;
 require DBI;
 require Data::Dumper;
 
+my $MIG_TABLENAME = "_verses_migrations";
+
 my %legal_ctx_def = 
 (
 	'create' => "*create->create",
@@ -316,6 +318,101 @@ sub db_err {
 	return $handle->errstr;
 }
 
-__PACKAGE__->register('mysql');
+sub prepare {
+	my $self = shift;
 
+	my $dbh = Verses::db_handle;
+	if (! $dbh) { return undef; }
+
+	my $q = "SHOW TABLES LIKE '$MIG_TABLENAME';";
+	my $sth = $dbh->prepare($q);
+	$sth->execute();
+
+	if (! $sth->rows) {
+		return $self->_create_migration_table();
+	} else {
+		return 1;
+	}
+}
+
+sub _create_migration_table {
+	my $self = shift;
+
+	my $query = <<QUERY
+CREATE TABLE $MIG_TABLENAME (
+	iteration int,
+	migration varchar(255),
+	migrated datetime,
+	INDEX (iteration)
+)	
+QUERY
+;
+
+	my $sth = Verses::db_handle->prepare($query);
+	if (! $sth->execute()) {
+		return undef;
+	} else {
+		return 1;
+	}
+}
+
+sub get_iteration {
+	my $self = shift;
+
+	my $q = "SELECT MAX(iteration) FROM $MIG_TABLENAME;";
+	my $sth = Verses::db_handle->prepare($q);
+	$sth->execute();
+
+	my $max_iter = $sth->fetchrow_array();
+
+	return $max_iter + 1;
+}
+
+sub migration_history {
+	my $self = shift;
+
+	my $q = "SELECT iteration,migration FROM $MIG_TABLENAME ORDER BY iteration;";
+	my $sth = Verses::db_handle->prepare($q);
+	$sth->execute();
+
+	my @history;
+	while (my $row = $sth->fetchrow_hashref()) {
+		push (@history, [ $row->{'iteration'} => $row->{'migration'} ]);
+	}
+	$sth->finish;
+
+	return @history;
+}
+
+sub record_migration {
+	my $self      = shift @_;
+	my $iteration = shift @_;
+	my @migs      = @_;
+
+	my $dbh = Verses::db_handle;
+
+	foreach my $mig (@migs) {
+		my $q = "INSERT INTO $MIG_TABLENAME (iteration, migration, migrated) VALUES(?,?,NOW());";
+		my $sth = $dbh->prepare($q);
+		if (! $sth->execute($iteration, $mig)) {
+			return undef;
+		}
+	}
+
+	return 1;
+}
+
+sub supported {
+	eval {
+		require DBD::mysql;
+
+		#delete $INC{'DBD/mysql.pm'};
+	};
+
+	return length $@ ? undef : 1;
+}
+
+BEGIN {
+	__PACKAGE__->register('mysql') if __PACKAGE__->supported;
+}
 1;

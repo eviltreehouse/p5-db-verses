@@ -9,7 +9,7 @@ require Verses::Engine::MySQL;
 require Verses::Plan;
 #require Verses::Engine::SQLite;
 
-my @SUPPORTED_ENGINES = qw/mysql sqlite/;
+my @SUPPORTED_ENGINES = ();
 my %ENGINES;
 
 our $CONF;
@@ -21,6 +21,17 @@ my $verbose = 0;
 
 sub migrate {
 	conf();
+	my $to_run;
+
+	if (int @_) {
+		foreach my $arg (@_) {
+			if ($arg =~ m/^\d+$/) {
+				$to_run = $arg;
+			} elsif ($arg =~ m/^\w+$/) {
+				$TAG = $arg;
+			}
+		}
+	}
 
 	if (! ref $CONF) {
 		print "[!] Unable to load Verses configuration file (.db-verses). Have you run 'init'?\n";
@@ -40,14 +51,41 @@ sub migrate {
 		exit 1;
 	}
 
+	if (! defined $ENGINE->prepare()) {
+		print "[!] Database engine could not initialize itself for migration status storage. Ensure this user can " .
+			  "INSERT INTO the migration table and/or this user can CREATE tables.\n";
+		exit 1;
+	}
+
+	my @to_run = ();
+	my %has_run = map { $_->[1] => $_->[0] } $ENGINE->migration_history();
+
 	foreach my $planFile (get_plans()) {
 		my $planClass = $planFile;
 		$planClass =~ s/\.v$//g;
-		$planClass = "Verses\:\:Plan\:\:$planClass";
 
-		do File::Spec->catfile( get_plan_dir(), $planFile );
+		if (! $has_run{$planClass}) {
+			push (@to_run, $planClass);
+		}
+	}
+
+	if ($to_run > 0 && $to_run < int @to_run) {
+		@to_run = $to_run[0..($to_run-1)];
+	}
+
+	if (! int @to_run) {
+		print "[.] Nothing to migrate.\n";
+		exit 0;
+	}
+
+	my $iteration = $ENGINE->get_iteration();
+
+	foreach my $planStub (@to_run) {
+		my $planClass = "Verses\:\:Plan\:\:$planStub";
+
+		do File::Spec->catfile( get_plan_dir(), "$planStub.v" );
 		if ($@) {
-			print "[X] $planFile\n";
+			print "[X] $planStub\n";
 			print $@;
 		} else {
 			my $plan = $planClass->new();
@@ -61,9 +99,10 @@ sub migrate {
 			#$SIG{__DIE__} = undef;
 
 			if ($@) {
-				print "[X] $planFile: " . _swave($@) . "\n";
+				print "[X] $planStub: " . _swave($@) . "\n";
 			} else {
-				print "[+] $planFile\n";
+				$ENGINE->record_migration($iteration => $planStub);
+				print "[^] $planStub\n";
 			}
 		}
 	}
@@ -155,6 +194,8 @@ sub register_engine {
 	$verbose && print "register_engine() $tag => $class\n";
 
 	$ENGINES{$tag} = $class;
+
+	@SUPPORTED_ENGINES = sort keys %ENGINES;
 }
 
 sub get_plan_dir {
@@ -203,9 +244,11 @@ sub conf {
 
 sub valid_engine {
 	my $e = shift @_;
-	my $match = int grep { lc($e) eq $_ ? $_ : undef } @SUPPORTED_ENGINES;
 
-	return $match > 0 ? 1 : 0;
+	#my $match = int grep { lc($e) eq $_ ? $_ : undef } @SUPPORTED_ENGINES;
+	#return $match > 0 ? 1 : 0;
+
+	return exists $ENGINES{$e};
 }
 
 sub timecode {
