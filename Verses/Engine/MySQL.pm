@@ -3,6 +3,7 @@ use strict;
 use base qw/Verses::Engine/;
 
 require DBI;
+require Data::Dumper;
 
 my %legal_ctx_def = 
 (
@@ -22,16 +23,16 @@ my %legal_ctx_tbuild =
 (
 	'add' => '*addcol',
 	'as' => 'as!',
-	'int' => 'int',
-	'smallint' => 'int',
-	'bigint'   => 'int',
-	'float'    => 'float',
-	'char'     => 'char',
-	'varchar'  => 'varchar',
-	'text'     => 'text',
-	'mediumtext' => 'mediumtext',
-	'largetext'  => 'largetext',
-	'datetime' => 'datetime',
+	'int' => 'int#dt',
+	'smallint' => 'smallint#dt',
+	'bigint'   => 'bigint#dt',
+	'float'    => 'float#dt',
+	'char'     => 'char#dt',
+	'varchar'  => 'varchar#dt',
+	'text'     => 'text#dt',
+	'mediumtext' => 'mediumtext#dt',
+	'largetext'  => 'largetext#dt',
+	'datetime' => 'datetime#dt',
 	'signed'   => 'signed',
 	'nullable' => 'nullable',
 	'default'  => 'default',
@@ -39,13 +40,12 @@ my %legal_ctx_tbuild =
 	'auto_increment' => 'auto_increment',
 	'unique'   => 'unique',
 	'indexed'  => 'indexed',
-	'add_unique' => 'add_unique',
-	'add_index'  => 'add_index'
+	'add_unique' => 'unique#idxt',
+	'add_index'  => 'index#idxt'
 );
 
 my %req_arguments_ctx_def =
 (
-	'create' => [],
 	'alter'  => [qw/tableName/],
 	'drop'   => [qw/tableName/],
 	'rename' => [qw/tableSrc tableDest/]
@@ -53,28 +53,15 @@ my %req_arguments_ctx_def =
 
 my %req_arguments_ctx_create = (
 	'table'  => [qw/tableName tableBuilder/],
-	'if_not_exists' => []
 );
 
 my %req_arguments_ctx_tbuild =
 (
 	'as' => [qw/colName/],
-	'int' => [],
-	'smallint' => [],
-	'bigint'   => [],
 	'float'    => [qw/floatDef/],
 	'char'     => [qw/siz/],
 	'varchar'  => [qw/siz/],
-	'text'     => [],
-	'mediumtext' => [],
-	'largetext'  => [],
-	'datetime' => [],
-	'signed'   => [],
-	'nullable' => [],
 	'default'  => [qw/defVal/],
-	'primary'  => [],
-	'unique'   => [],
-	'indexed'    => [],
 	'add_unique'  => [qw/col/],
 	'add_index' => [qw/col/]
 );
@@ -115,6 +102,7 @@ sub evaluate {
 	}
 
 	my $match_kw = $legal{$token};
+	my $adj_mark;
 
 	if ($match_kw =~ m/^\*/) {
 		my $action = $match_kw;
@@ -124,6 +112,10 @@ sub evaluate {
 			# Context shift.
 			$ctx = $action;
 			$ctx =~ s/^\*\w+\-\>//;
+		}
+
+		if ($match_kw =~ /\#(\w+)$/) {
+			$adj_mark = $1;
 		}
 
 		$action =~ s/^\*//;
@@ -136,24 +128,33 @@ sub evaluate {
 		}
 	} elsif ($match_kw =~ m/\!$/) {
 		$r_ret->{'done'} = 1;
+	} elsif ($match_kw =~ /\#(\w+)$/) {
+		$adj_mark = $1;
 	}
 
 	if (ref $req_arguments{$token} eq 'ARRAY') {
+		if ($adj_mark) {
+			$r_ret->{'adj'}{$adj_mark} = $token;
+		}
+
 		if (int @{$req_arguments{$token}} > 0 || int @args) {
 			$r_ret->{'adj'}{$token} = {};
 		}
 
 		foreach my $arg_name (@{ $req_arguments{$token} }) {
 			my $a = shift @args;
-			print "--- $token: $arg_name => " . (ref($a) ? "REF" : $a) ."\n";
+			#print "--- $token: $arg_name => " . (ref($a) ? "REF" : $a) ."\n";
 			$r_ret->{'adj'}{$token}{$arg_name} = $a;
 		}
 	} else {
 		#print "---- $token has no args.\n";
+		my $k = $adj_mark ? $adj_mark : $token;
+		my $v = $adj_mark ? $token : 1;
+		$r_ret->{'adj'}{$k} = $v;
 	}
 
-	if (int @args) {
-		$r_ret->{'adj'}{$token} = {} if ! defined $r_ret->{'adj'}{$token};
+	if (int @args && !$adj_mark) {
+		$r_ret->{'adj'}{$token} = {} if ! $r_ret->{'adj'}{$token};
 		$r_ret->{'adj'}{$token}{"__extra"} = @args;
 	}
 
@@ -174,7 +175,10 @@ sub parse {
 	if ($action eq 'create') {
 		return $self->_action_create($plan, %$r_adj);
 	} elsif ($action eq 'addcol') {
-		return "addcol: " . $r_adj->{'as'}{'colName'};
+		my $def = $self->_action_createColumnOrIndex($plan, %$r_adj);
+		print "DEF: $def\n";
+		#return "addcol: " . $r_adj->{'as'}{'colName'};
+		return $def;
 	} else {
 		die "Unhandled action '$action'";
 	}
@@ -185,7 +189,7 @@ sub _action_create {
 	my $plan = shift;
 	my %adj  = @_;
 
-	my @q = qw/CREATE/;
+	my @q = qw/CREATE TABLE/;
 
 	$self->_ensure('FAILED', $adj{'table'}); $self->_ensure('Bad Table Name', $adj{'table'}{'tableName'}, '^[A-Za-z0-9_]+$'); $self->_ensure('FAILED TBUILD', $adj{'table'}{'tableBuilder'});
 
@@ -198,10 +202,10 @@ sub _action_create {
 	$plan->_reset_action();
 	$plan->_queue_actions();
 	$plan->_set_context('tbuild');
-	print "---+ calling builder...\n";
+	#print "---+ calling builder...\n";
 	&{$builder}($plan);
 	@cols = $plan->_queued();
-	print "+--- builder done.\n";
+	#print "+--- builder done.\n";
 
 
 	if ($adj{'if_not_exists'}) {
@@ -209,10 +213,65 @@ sub _action_create {
 	}
 
 	push(@q, $adj{'table'}{'tableName'}, "(");
-	push(@q, map { "$_;" } @cols);
+	push(@q, join(",\n", @cols));
 	push(@q, ")");
 
 	return join(" ", @q);
+}
+
+sub _action_createColumnOrIndex {
+	my $self = shift;
+	my $plan = shift;
+	my %adj  = @_;
+
+	print Data::Dumper->Dump([ \%adj ]);
+	my @def;
+	my $colName = $adj{'as'}{'colName'};
+	if ($adj{'dt'}) {
+		my $dt = $adj{'dt'};
+		push (@def, $colName);
+		if (ref $adj{$dt}) {
+			push(@def, "$dt(" . $adj{$dt}{'siz'} . ")");
+		} else {
+			push (@def, $dt);
+		}
+
+		if ($dt =~ m/text$/) {
+			# Text columns are NULL.
+			$adj{'nullable'} = 1;
+		}
+
+		if (! $adj{'nullable'} && ! $adj{'auto_increment'}) {
+			push (@def, "NOT NULL");
+			if (! $adj{'auto_increment'}) {
+				if (! $adj{'default'}) {
+					die "No default defined for NULLABLE column: $colName";
+				} else {
+					if (! defined $adj{'default'}{'defVal'}) {
+						die "No default defined for NULLABLE column: $colName";
+					} else {
+						push (@def, "DEFAULT " . _q($adj{'default'}{'defVal'}));
+					}
+				}
+			}
+		}
+
+		if ($adj{'auto_increment'}) { push (@def, "AUTO_INCREMENT"); }
+
+		if ($adj{'primary'}) { push(@def, "PRIMARY KEY"); }
+		if ($adj{'unique'}) { push(@def, "UNIQUE"); }
+
+	} elsif ($adj{'idxt'}) {
+		# @TODO
+	} else {
+		die "Unknown column entity";
+	}
+
+	return join(" ", @def);
+}
+
+sub _q {
+	return Verses::db_handle->quote( $_[0] );
 }
 
 sub db_handle {

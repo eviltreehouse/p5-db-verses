@@ -69,6 +69,17 @@ sub _set_context {
 	$CONTEXT = $_[1];
 }
 
+sub out {
+	my $self = shift;
+	my $msg  = shift;
+
+	my $cls = ref $self;
+	$cls =~ s/.*\:\://g;
+	$cls =~ s/^\d+\_//;
+
+	print "[$cls] $msg\n";
+}
+
 sub AUTOLOAD {
 	return if $Verses::Plan::AUTOLOAD =~ m/DESTROY$/;
 
@@ -79,7 +90,7 @@ sub AUTOLOAD {
 		return $plan;
 	}
 
-	print "[$CONTEXT] INVOKE => " . $cmd . " with " . join(", ", @_) . "\n";
+	#print "[$CONTEXT] INVOKE => " . $cmd . " with " . join(", ", @_) . "\n";
 
 	my $ret = _engine()->evaluate($CONTEXT, $cmd, @_);
 	if (! defined $ret) {
