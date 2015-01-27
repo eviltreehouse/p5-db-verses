@@ -15,11 +15,11 @@ sub new {
 }
 
 sub up {
-	print "no up.";
+	die "no up()";
 }
 
 sub down {
-	print "no down.";
+	die "no down()";
 }
 
 sub db {
@@ -104,16 +104,19 @@ sub AUTOLOAD {
 
 		if ($ret->{'done'}) {
 			# Parse/Execute the command..
-			my $ret = _engine()->parse($plan, $CONTEXT, $ACTION, \%ADJ);
-			if ($ret) {
+			my @ret = _engine()->parse($plan, $CONTEXT, $ACTION, \%ADJ);
+			if (int @ret) {
 				if ($plan->{"_queue"}) {
-					push (@AQUEUE, $ret);
+					push (@AQUEUE, @ret);
 				} else {
-					print "RUN QUERY: $ret\n";
-					my $qret = _engine->execute($ret);
+					foreach my $q (@ret) {
+						print "RUN QUERY: $q\n";
+						my $qret = _engine->execute($q);
 
-					if (! defined $qret) {
-						die _engine->db_err( _dbh() );
+						if (! defined $qret) {
+							die _engine->db_err( _dbh() );
+							last;
+						}
 					}
 				}
 			}

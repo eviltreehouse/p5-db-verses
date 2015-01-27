@@ -10,7 +10,7 @@ my $MIG_TABLENAME = "_verses_migrations";
 my %grammar = (
 	'kw_def' => {
 		'create' => "*create->create",
-		'alter'  => "*alter",
+		'alter'  => "*alter->alter",
 		"drop"   => "*drop->drop",
 		"rename" => "*rename",		
 	},
@@ -18,13 +18,20 @@ my %grammar = (
 		'table'  => "table!",
 		'if_not_exists' => "if_not_exists"
 	},
+	'kw_alter'  => {
+		'table' => "table!"
+	},	
 	'kw_drop'   => {
 		'table'  => "table!",
 		'if_exists' => "if_exists"
 	},
 	'kw_tbuild' => {
 		'add' => '*addcol',
+		'modify' => '*modcol',
+		'drop'   => '*dropcol',
+		'drop_index' => '*dropidx',
 		'as' => 'as!',
+		'target' => 'target!',
 		'int' => 'int#dt',
 		'smallint' => 'smallint#dt',
 		'bigint'   => 'bigint#dt',
@@ -44,19 +51,22 @@ my %grammar = (
 		'indexed'  => 'indexed',
 		'add_unique' => 'unique#idxt',
 		'add_index'  => 'index#idxt'		
-		},
+	},
 	'args_def' => {
-		'alter'  => [qw/tableName/],
 		'rename' => [qw/tableSrc tableDest/]			
 	},
 	'args_create' => {
 		'table'  => [qw/tableName tableBuilder/],
 	},
-		'args_drop' => {
-		'table'  => [qw/tableName/],
+	'args_drop' => {
+		'table'  => [qw/tableName/]
+	},
+	'args_alter' => {
+		'table' => [qw/tableName tableBuilder/]
 	},
 	'args_tbuild' => {
 		'as' => [qw/colName/],
+		'target' => qw[qw/colName/],
 		'float'    => [qw/floatDef/],
 		'char'     => [qw/siz/],
 		'varchar'  => [qw/siz/],
@@ -65,6 +75,9 @@ my %grammar = (
 		'add_index' => [qw/col/]			
 	}
 );
+
+$grammar{'kw_talter'} = $grammar{'kw_tbuild'};
+$grammar{'args_talter'} = $grammar{'kw_tbuild'};
 
 sub grammar {
 	return \%grammar;
@@ -83,10 +96,18 @@ sub parse {
 	if ($action eq 'create') {
 		return $self->_action_create($plan, %$r_adj);
 	} elsif ($action eq 'addcol') {
-		my $def = $self->_action_createColumnOrIndex($plan, %$r_adj);
+		my $def = $self->_action_createColumnOrIndex($plan, $ctx, %$r_adj);
 		print "DEF: $def\n";
 		#return "addcol: " . $r_adj->{'as'}{'colName'};
 		return $def;
+	} elsif ($action eq 'modcol') {
+		my $def = $self->_action_modifyColumn($plan, %$r_adj);
+		return $def;
+	} elsif ($action eq 'dropcol' || $action eq 'dropidx') {
+		#my $def = $self->_action_dropColumnOrIndex($plan, %$r_adj);
+		#return $def;	
+	} elsif ($action eq 'alter') {
+		return $self->_action_alter($plan, %$r_adj);
 	} elsif ($action eq 'drop') {
 		return $self->_action_drop($plan, %$r_adj);
 	} else {
@@ -129,6 +150,25 @@ sub _action_create {
 	return join(" ", @q);
 }
 
+sub _action_alter {
+	my $self = shift;
+	my $plan = shift;
+	my %adj  = @_;
+
+	$self->_ensure('FAILED', $adj{'table'}); $self->_ensure('Bad Table Name', $adj{'table'}{'tableName'}, '^[A-Za-z0-9_]+$'); $self->_ensure('FAILED ModifySub', $adj{'table'}{'tableBuilder'});
+
+	my $modifier = $adj{'table'}{'tableBuilder'};
+	$plan->_reset_action();
+	$plan->_queue_actions();
+	$plan->_set_context('talter');
+	&{$modifier}($plan);
+	my @changes = $plan->queued();
+
+	@changes = map { "ALTER TABLE " . $adj{'table'}{'tableName'} . " " . $_  } @changes;
+
+	return @changes;
+}
+
 sub _action_drop {
 	my $self = shift @_;
 	my $plan = shift @_;
@@ -150,6 +190,7 @@ sub _action_drop {
 sub _action_createColumnOrIndex {
 	my $self = shift;
 	my $plan = shift;
+	my $ctx  = shift;
 	my %adj  = @_;
 
 	print Data::Dumper->Dump([ \%adj ]);
@@ -194,6 +235,22 @@ sub _action_createColumnOrIndex {
 	} else {
 		die "Unknown column entity";
 	}
+
+	if ($ctx eq 'talter') {
+		# Append for proper query syntax
+		unshift(@def, "ADD COLUMN");
+	}
+
+	return join(" ", @def);
+}
+
+sub _action_modifyColumn {
+	my $self = shift;
+	my $plan = shift;
+	my %adj = @_;
+
+	print Data::Dumper->Dump( [\%adj ] );
+	my @def;
 
 	return join(" ", @def);
 }
