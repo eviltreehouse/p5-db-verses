@@ -23,6 +23,8 @@ our $TRY_STATE = '';
 
 my $verbose = 0;
 
+sub version { print "$Verses::VERSION\n"; exit 0; }
+
 sub try_migrate { $TRY_MODE = 1; migrate(@_); }
 
 sub migrate {
@@ -403,7 +405,7 @@ sub _swave {
 	#
 	# Assemble cmds in main scope to simply cmdline perl -e invocation
 	#
-	foreach my $cmd (qw/migrate rollback plan init try_migrate/) {
+	foreach my $cmd (qw/migrate rollback plan init try_migrate version/) {
 		*{'main::' . $cmd} = *{'Verses::' . $cmd};
 	}
 }
