@@ -6,6 +6,7 @@ sub new {
 
 	$self->{'conf'} = {};
 	$self->{'tagged'} = {};
+	$self->{'settings'} = {};
 
 	$self->_load( $_[1] );
 
@@ -33,7 +34,7 @@ sub _load {
 			next;
 		}
 
-		(my $ele, my $val) = $l =~ m/^([A-Za-z0-9_\:]+)\s+(.*?)$/;
+		(my $ele, my $val) = $l =~ m/^([A-Za-z0-9_\-\:]+)\s+(.*?)$/;
 
 		# Wash quotes
 		$val =~ s/^(['"]).*?\1//g;
@@ -44,6 +45,13 @@ sub _load {
 		}
 
 		my $tag = undef;
+
+		if ($ele =~ m/^set\-(.*?)\s+/) {
+			my $setting = lc $1;
+
+			$self->{'settings'}{$setting} = $val;
+			next;
+		}
 
 		if ($ele =~ m/\:/) {
 			($tag, $ele) = $ele =~ m/^([a-zA-Z0-9]+)\:(.*?)$/;
@@ -79,17 +87,37 @@ sub get {
 	}
 }
 
+sub get_setting {
+	my $self = shift;
+
+	my $s = lc $_[0];
+
+	if (defined $self->{'settings'}{$s}) {
+		return $self->{'settings'}{$s};
+	}  else {
+		return $_[1];
+	}
+}
+
+sub settings {
+	my $self = shift;
+
+	return %{ $self->{'settings'} };
+}
+
 sub _valid_element {
 	my $ele = shift @_;
 
 	my @valid = (
 		'^engine$',
 		'^migration_dir$',
+		'^set\-[a-zA-Z0-9\-\_]',
 		'^(?:[a-zA-Z0-9]+\:)?host$',
-		'^(?:[a-zA-Z0-9]+\:)?socket',
-		'^(?:[a-zA-Z0-9]+\:)?username',
-		'^(?:[a-zA-Z0-9]+\:)?password',
-		'^(?:[a-zA-Z0-9]+\:)?database'
+		'^(?:[a-zA-Z0-9]+\:)?socket$',
+		'^(?:[a-zA-Z0-9]+\:)?username$',
+		'^(?:[a-zA-Z0-9]+\:)?password$',
+		'^(?:[a-zA-Z0-9]+\:)?database$',
+		'^set\-'
 	);
 
 	my $okay = 0;
