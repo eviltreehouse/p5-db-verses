@@ -102,6 +102,10 @@ sub AUTOLOAD {
 			$ADJ{$k} = $ret->{'adj'}{$k};
 		}
 
+		$ACTION = $ret->{'action'} if exists $ret->{'action'};
+		$CONTEXT = $ret->{'ctx'} if exists $ret->{'ctx'};
+
+
 		if ($ret->{'done'}) {
 			# Parse/Execute the command..
 			my @ret = _engine()->parse($plan, $CONTEXT, $ACTION, \%ADJ);
@@ -123,9 +127,6 @@ sub AUTOLOAD {
 
 			# And do the next one..
 			$plan->_reset_action();
-		} else {
-			$ACTION = $ret->{'action'} if exists $ret->{'action'};
-			$CONTEXT = $ret->{'ctx'} if exists $ret->{'ctx'};
 		}
 	}
 

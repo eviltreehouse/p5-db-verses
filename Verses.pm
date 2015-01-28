@@ -17,7 +17,13 @@ our $DBH;
 our $ENGINE;
 our $TAG;
 
+# Activate simulation mode..
+our $TRY_MODE = 0;
+our $TRY_STATE = '';
+
 my $verbose = 0;
+
+sub try_migrate { $TRY_MODE = 1; migrate(@_); }
 
 sub migrate {
 	conf();
@@ -70,6 +76,8 @@ sub migrate {
 
 			#$SIG{__DIE__} = sub { print "[X] KA-BOOM! " . @_; print "*Shrugs*"; }; 
 			
+			if ($TRY_MODE) { $TRY_STATE = "^$planStub"; }
+
 			eval {
 				$plan->up();
 			};
@@ -79,7 +87,7 @@ sub migrate {
 			if ($@) {
 				print "[X] $planStub: " . _swave($@) . "\n";
 			} else {
-				$ENGINE->record_migration($iteration => $planStub);
+				$ENGINE->record_migration($iteration => $planStub) if (! $TRY_MODE);
 				print "[^] $planStub\n";
 			}
 		}
@@ -395,7 +403,7 @@ sub _swave {
 	#
 	# Assemble cmds in main scope to simply cmdline perl -e invocation
 	#
-	foreach my $cmd (qw/migrate rollback plan init/) {
+	foreach my $cmd (qw/migrate rollback plan init try_migrate/) {
 		*{'main::' . $cmd} = *{'Verses::' . $cmd};
 	}
 }

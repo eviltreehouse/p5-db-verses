@@ -28,10 +28,10 @@ my %grammar = (
 	'kw_tbuild' => {
 		'add' => '*addcol',
 		'modify' => '*modcol',
-		'drop'   => '*dropcol',
-		'drop_index' => '*dropidx',
-		'as' => 'as!',
-		'target' => 'target!',
+		'drop'   => '*dropcol!',
+		'drop_index' => '*dropidx!',
+		'as'     => 'as!',
+		'the'    => 'the!',
 		'int' => 'int#dt',
 		'smallint' => 'smallint#dt',
 		'bigint'   => 'bigint#dt',
@@ -65,19 +65,21 @@ my %grammar = (
 		'table' => [qw/tableName tableBuilder/]
 	},
 	'args_tbuild' => {
-		'as' => [qw/colName/],
-		'target' => qw[qw/colName/],
+		'as'  => [qw/colName/],
+		'the' => [qw/colName/],
 		'float'    => [qw/floatDef/],
 		'char'     => [qw/siz/],
 		'varchar'  => [qw/siz/],
 		'default'  => [qw/defVal/],
 		'add_unique'  => [qw/col/],
-		'add_index' => [qw/col/]			
+		'add_index' => [qw/col/],
+		'drop'  => [qw/e/],
+		'drop_index' => [qw/e/]
 	}
 );
 
 $grammar{'kw_talter'} = $grammar{'kw_tbuild'};
-$grammar{'args_talter'} = $grammar{'kw_tbuild'};
+$grammar{'args_talter'} = $grammar{'args_tbuild'};
 
 sub grammar {
 	return \%grammar;
@@ -97,15 +99,13 @@ sub parse {
 		return $self->_action_create($plan, %$r_adj);
 	} elsif ($action eq 'addcol') {
 		my $def = $self->_action_createColumnOrIndex($plan, $ctx, %$r_adj);
-		print "DEF: $def\n";
-		#return "addcol: " . $r_adj->{'as'}{'colName'};
 		return $def;
 	} elsif ($action eq 'modcol') {
 		my $def = $self->_action_modifyColumn($plan, %$r_adj);
 		return $def;
 	} elsif ($action eq 'dropcol' || $action eq 'dropidx') {
-		#my $def = $self->_action_dropColumnOrIndex($plan, %$r_adj);
-		#return $def;	
+		my $def = $self->_action_dropColumnOrIndex($plan, $action, %$r_adj);
+		return $def;	
 	} elsif ($action eq 'alter') {
 		return $self->_action_alter($plan, %$r_adj);
 	} elsif ($action eq 'drop') {
@@ -162,7 +162,7 @@ sub _action_alter {
 	$plan->_queue_actions();
 	$plan->_set_context('talter');
 	&{$modifier}($plan);
-	my @changes = $plan->queued();
+	my @changes = $plan->_queued();
 
 	@changes = map { "ALTER TABLE " . $adj{'table'}{'tableName'} . " " . $_  } @changes;
 
@@ -193,7 +193,7 @@ sub _action_createColumnOrIndex {
 	my $ctx  = shift;
 	my %adj  = @_;
 
-	print Data::Dumper->Dump([ \%adj ]);
+	#print Data::Dumper->Dump([ \%adj ]);
 	my @def;
 	my $colName = $adj{'as'}{'colName'};
 	if ($adj{'dt'}) {
@@ -244,13 +244,44 @@ sub _action_createColumnOrIndex {
 	return join(" ", @def);
 }
 
+sub _action_dropColumnOrIndex {
+	my $self = shift;
+	my $plan = shift;
+	my $action = shift;
+
+	my %adj  = @_;
+
+	#print Data::Dumper->Dump( [$action, \%adj ] );
+
+	my %e = ( 'dropcol' => 'COLUMN', 'dropidx' => 'INDEX' );
+	my %ek = ('dropcol' => 'drop', 'dropidx' => 'drop_index');
+
+	$self->_ensure('Invalid drop action', $e{ $action });
+	$self->_ensure('No column/index specified', $adj{ $ek{$action} });
+	$self->_ensure('No column/index specified', $adj{ $ek{$action} }{'e'});
+
+	my @def;
+
+	push(@def, "DROP", $e{$action}, $adj{ $ek{$action} }{'e'});
+
+	return join(" ", @def);
+}
+
 sub _action_modifyColumn {
 	my $self = shift;
 	my $plan = shift;
 	my %adj = @_;
 
-	print Data::Dumper->Dump( [\%adj ] );
+	#print Data::Dumper->Dump( [\%adj ] );
+
+	$self->_ensure('No target specified.', $adj{'the'}); $self->_ensure('No target specified.', $adj{'the'}{'colName'});
+
 	my @def;
+
+	push(@def, "MODIFY COLUMN");
+	push(@def, $adj{'the'}{'colName'});
+
+	push(@def, $self->_action_createColumnOrIndex($plan, '', %adj));
 
 	return join(" ", @def);
 }

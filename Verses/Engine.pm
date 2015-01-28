@@ -41,10 +41,15 @@ sub execute {
 	my $self = shift @_;
 	my $query = shift;
 
-	my $sth = $Verses::DBH->prepare($query);
-	my $ret = $sth->execute();
+	if ($Verses::TRY_MODE) {
+		$query =~ s/\n/ /g;
+		print "[>> " . $Verses::TRY_STATE . "] " . $query . "\n";
+	} else {
+		my $sth = $Verses::DBH->prepare($query);
+		my $ret = $sth->execute();
 
-	return defined $ret ? 1 : undef;
+		return defined $ret ? 1 : undef;
+	}
 }
 
 sub _ensure {
@@ -114,8 +119,13 @@ sub evaluate {
 			$adj_mark = $1;
 		}
 
+		if ($match_kw =~ m/\!$/) {
+			$r_ret->{'done'} = 1;
+		}
+
 		$action =~ s/^\*//;
 		$action =~ s/\-\>\w+$//;
+		$action =~ s/\!$//;
 
 		$r_ret->{'action'} = $action;
 
@@ -150,8 +160,10 @@ sub evaluate {
 	}
 
 	if (int @args && !$adj_mark) {
+		print "Extra arguments for $token... " . join(",",@args);
 		$r_ret->{'adj'}{$token} = {} if ! $r_ret->{'adj'}{$token};
-		$r_ret->{'adj'}{$token}{"__extra"} = @args;
+		print $r_ret->{'adj'}{$token} = {};
+		$r_ret->{'adj'}{$token}{"__extra"} = \@args;
 	}
 
 
