@@ -7,6 +7,9 @@ require Data::Dumper;
 
 my $MIG_TABLENAME = "_verses_migrations";
 
+Verses::Conf::register_setting('mysql-tabletype', 'default tabletype to use');
+Verses::Conf::register_setting('mysql-table-collation', 'collation type');
+
 my %grammar = (
 	'kw_def' => {
 		'create' => "*create->create",

@@ -1,6 +1,8 @@
 package Verses::Conf;
 use strict;
 
+my %KNOWN_SETTINGS = ();
+
 sub new {
 	my $self = bless({}, $_[0]);
 
@@ -131,6 +133,23 @@ sub _valid_element {
 	return $okay;
 }
 
+sub register_setting {
+	shift @_ if ref $_[0];
+	my $setting = shift @_;
 
+	$KNOWN_SETTINGS{lc $setting} = $_[0];
+}
+
+sub known_settings {
+	shift @_ if ref $_[0];
+
+	my @ret;
+
+	foreach my $sk (sort keys %KNOWN_SETTINGS) {
+		push(@ret, [ $sk, $KNOWN_SETTINGS{$sk} ]);
+	}
+
+	return @ret;
+}
 
 1;
