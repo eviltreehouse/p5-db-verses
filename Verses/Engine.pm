@@ -96,8 +96,8 @@ sub evaluate {
 	}
 
 	if (ref $req_arguments{$token} eq 'ARRAY') {
-		if (int @{$req_arguments{$token}} < int @args) {
-			print "Args mismatch";
+		if (int @{$req_arguments{$token}} > int @args) {
+			print "Missing arguments for $token";
 			return undef;
 		}
 	}
@@ -160,9 +160,7 @@ sub evaluate {
 	}
 
 	if (int @args && !$adj_mark) {
-		print "Extra arguments for $token... " . join(",",@args);
 		$r_ret->{'adj'}{$token} = {} if ! $r_ret->{'adj'}{$token};
-		print $r_ret->{'adj'}{$token} = {};
 		$r_ret->{'adj'}{$token}{"__extra"} = \@args;
 	}
 

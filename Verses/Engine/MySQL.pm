@@ -12,7 +12,8 @@ my %grammar = (
 		'create' => "*create->create",
 		'alter'  => "*alter->alter",
 		"drop"   => "*drop->drop",
-		"rename" => "*rename",		
+		"rename" => "*rename",
+		'raw'    => '*raw!'		
 	},
 	'kw_create' => {
 		'table'  => "table!",
@@ -49,11 +50,12 @@ my %grammar = (
 		'auto_increment' => 'auto_increment',
 		'unique'   => 'unique',
 		'indexed'  => 'indexed',
-		'add_unique' => 'unique#idxt',
-		'add_index'  => 'index#idxt'		
+		'new_unique' => 'new_unique#idxt',
+		'new_index'  => 'new_index#idxt'		
 	},
 	'args_def' => {
-		'rename' => [qw/tableSrc tableDest/]			
+		'rename' => [qw/tableSrc tableDest/],
+		'raw'    => [qw/q/]			
 	},
 	'args_create' => {
 		'table'  => [qw/tableName tableBuilder/],
@@ -71,8 +73,8 @@ my %grammar = (
 		'char'     => [qw/siz/],
 		'varchar'  => [qw/siz/],
 		'default'  => [qw/defVal/],
-		'add_unique'  => [qw/col/],
-		'add_index' => [qw/col/],
+		'new_unique'  => [qw/cols/],
+		'new_index' => [qw/cols/],
 		'drop'  => [qw/e/],
 		'drop_index' => [qw/e/]
 	}
@@ -93,7 +95,7 @@ sub parse {
 	my $action = shift;
 	my $r_adj  = shift;
 
-	print "[.] MySQL [$ctx] ACTION: " . $action . " with " . join(", ", map { $_ . " = " . $r_adj->{$_} } keys %$r_adj) . "\n";
+	#print "[.] MySQL [$ctx] ACTION: " . $action . " with " . join(", ", map { $_ . " = " . $r_adj->{$_} } keys %$r_adj) . "\n";
 
 	if ($action eq 'create') {
 		return $self->_action_create($plan, %$r_adj);
@@ -110,9 +112,50 @@ sub parse {
 		return $self->_action_alter($plan, %$r_adj);
 	} elsif ($action eq 'drop') {
 		return $self->_action_drop($plan, %$r_adj);
+	} elsif ($action eq 'raw') {
+		my $q = $self->_action_raw($plan, %$r_adj);
+		return $q;
 	} else {
 		die "Unhandled action '$action'";
 	}
+}
+
+sub _action_raw {
+	my $self = shift;
+	my $plan = shift;
+	my %adj  = @_;
+
+	#print Data::Dumper->Dump([ \%adj ]);
+
+	my $query;
+
+	$self->_ensure("No query specified", $adj{'raw'}{'q'});
+
+	# Count interpolation uses and verify
+	my $int_count = 0;
+	my $q = $adj{'raw'}{'q'};
+
+	while ($q =~ m/\?/g) {
+		$int_count += 1;
+	}
+
+	if ($int_count > 0) {
+		$self->_ensure("Interpolated values required, not provided", $adj{'raw'}{"__extra"});
+
+		my @ex = @{ $adj{'raw'}{'__extra'} };
+
+		if (int @ex != $int_count) {
+			$self->_ensure("Interpolated value count mismatch", undef);
+		}
+
+		while ($q =~ m/\?/) {
+			my $nv = shift @ex;
+			$nv = _q($nv);
+			$q =~ s/\?/$nv/;
+		}
+	}
+
+	return $q;
 }
 
 sub _action_create {
@@ -143,8 +186,19 @@ sub _action_create {
 		push(@q, qw/IF NOT EXISTS/);
 	}
 
+	my @idxs;
+	foreach (@cols) {
+		if ($_ =~ m/^\:\I\:/) {
+			# Index definition, move to end.
+			push (@idxs, $_);
+		}
+	}
+
+	@cols = grep { $_ =~ m/^\:\I\:/ ? undef : $_ } @cols;
+
 	push(@q, $adj{'table'}{'tableName'}, "(");
 	push(@q, join(",\n", @cols));
+	push(@q, join(",\n", @idxs));
 	push(@q, ")");
 
 	return join(" ", @q);
@@ -230,15 +284,43 @@ sub _action_createColumnOrIndex {
 		if ($adj{'primary'}) { push(@def, "PRIMARY KEY"); }
 		if ($adj{'unique'}) { push(@def, "UNIQUE"); }
 
+		if ($ctx eq 'talter') {
+			# Append for proper query syntax
+			unshift(@def, "ADD COLUMN");
+		}
+
 	} elsif ($adj{'idxt'}) {
-		# @TODO
+		#print Data::Dumper->Dump([ \%adj ]);
+
+		my %valid_idx = ('new_unique' => 1, 'new_index' => 1);
+		my %idx_title = ('new_unique' => 'UNIQUE KEY' => 'new_index' => 'INDEX');
+
+		$self->_ensure('Invalid index/key type specified', $valid_idx{ $adj{'idxt'} });
+		$self->_ensure('No column(s) specified', $adj{ $adj{'idxt'} });
+		$self->_ensure('No column(s) specified', $adj{ $adj{'idxt'} }{'cols'});
+		$self->_ensure('Columns should be ARRAYREF', ref $adj{ $adj{'idxt'} }{'cols'} eq 'HASH' ? undef : 0);
+
+		my @cols = ref $adj{ $adj{'idxt'} }{'cols'} eq 'ARRAY' ? @{ $adj{ $adj{'idxt'} }{'cols'} } : $adj{ $adj{'idxt'} }{'cols'};
+
+		my @safe_cols = map { s/[^A-Za-z0-9_]//g; $_; } @cols;
+
+		my $idx_name = $adj{'as'}{'colName'};
+		if (! length $idx_name) {
+			$idx_name = _idx_auto_name($adj{'idxt'}, @safe_cols);
+		}
+
+		if ($ctx eq 'talter') {
+			push(@def, "ADD", $idx_title{$adj{'idxt'}}, $idx_name);
+			push(@def, "(", join(", ", @safe_cols), ")");
+		} else {
+			push(@def, $idx_title{ $adj{'idxt'} }, $idx_name);
+			push(@def, "(", join(", ", @safe_cols), ")");
+			unshift(@def, ":I:");
+		}
+
+		#die "Got an INDEX!!!";
 	} else {
 		die "Unknown column entity";
-	}
-
-	if ($ctx eq 'talter') {
-		# Append for proper query syntax
-		unshift(@def, "ADD COLUMN");
 	}
 
 	return join(" ", @def);
@@ -288,6 +370,19 @@ sub _action_modifyColumn {
 
 sub _q {
 	return Verses::db_handle->quote( $_[0] );
+}
+
+sub _idx_auto_name {
+	my $idx_t = shift @_;
+	my @cols = @_;
+
+	my $idx_name = '';
+	$idx_name = join("_", @cols);
+
+	$idx_name .= "_idx"  if $idx_t eq 'add_index';
+	$idx_name .= "_uidx" if $idx_t eq 'add_unique';
+
+	return $idx_name;
 }
 
 sub db_handle {
