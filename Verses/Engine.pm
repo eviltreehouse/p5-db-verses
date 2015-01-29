@@ -168,6 +168,10 @@ sub evaluate {
 	return $r_ret;
 }
 
+sub conf {
+	return $Verses::CONF;
+}
+
 
 sub db_handle {
 	return $Verses::DBH;

@@ -6,7 +6,11 @@ my %ADJ;
 my $CONTEXT = 'def';
 my $CTXLOCK = 0;
 
+my @DIRECTIVE;
+
 my @AQUEUE = ();
+
+my $HNDL_OUT = \&_default_out;
 
 sub new {
 	my $self = bless({}, $_[0]);
@@ -30,6 +34,7 @@ sub _reset_action {
 	undef $ACTION;
 	%ADJ    = ();
 	$CONTEXT = $CTXLOCK ? $CONTEXT : 'def';
+	@DIRECTIVE = ();
 }
 
 sub _engine {
@@ -77,6 +82,12 @@ sub out {
 	$cls =~ s/.*\:\://g;
 	$cls =~ s/^\d+\_//;
 
+	&{$HNDL_OUT}($cls => $msg);
+}
+
+sub _default_out {
+	(my $cls, my $msg) = @_;
+
 	print "[$cls] $msg\n";
 }
 
@@ -89,6 +100,8 @@ sub AUTOLOAD {
 	if (! $plan->{'alive'}) {
 		return $plan;
 	}
+
+	push( @DIRECTIVE, [ $cmd, \@_ ] );
 
 	#print "[$CONTEXT] INVOKE => " . $cmd . " with " . join(", ", @_) . "\n";
 
@@ -108,13 +121,18 @@ sub AUTOLOAD {
 
 		if ($ret->{'done'}) {
 			# Parse/Execute the command..
+			if (! $ACTION) {
+				my $directive_string = _directive_string();
+				die "No action/verb specified as part of directive: $directive_string";
+			}
+
 			my @ret = _engine()->parse($plan, $CONTEXT, $ACTION, \%ADJ);
 			if (int @ret) {
 				if ($plan->{"_queue"}) {
 					push (@AQUEUE, @ret);
 				} else {
 					foreach my $q (@ret) {
-						print "RUN QUERY: $q\n";
+						#print "RUN QUERY: $q\n";
 						my $qret = _engine->execute($q);
 
 						if (! defined $qret) {
@@ -131,6 +149,18 @@ sub AUTOLOAD {
 	}
 
 	return $plan; 
+}
+
+sub _directive_string {
+	my @ele;
+
+	foreach my $r_dir (@DIRECTIVE) {
+		my $dir = $r_dir->[0];
+		my @opts = map { ref $_ ? "XXXXX" : $_ } @{ $r_dir->[1] };
+		push (@ele, "$dir\[" . join(" : ", @opts) . "]");
+	}
+
+	return join(" -> ", @ele);
 }
 
 1;

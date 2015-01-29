@@ -7,7 +7,7 @@ require Data::Dumper;
 
 my $MIG_TABLENAME = "_verses_migrations";
 
-Verses::Conf::register_setting('mysql-tabletype', 'default tabletype to use');
+Verses::Conf::register_setting('mysql-table-type', 'default tabletype to use');
 Verses::Conf::register_setting('mysql-collation', 'collation type');
 
 my %grammar = (
@@ -20,6 +20,8 @@ my %grammar = (
 	},
 	'kw_create' => {
 		'table'  => "table!",
+		'collation' => 'collation',
+		'type'    => 'type',
 		'if_not_exists' => "if_not_exists"
 	},
 	'kw_alter'  => {
@@ -62,6 +64,8 @@ my %grammar = (
 	},
 	'args_create' => {
 		'table'  => [qw/tableName tableBuilder/],
+		'collation' => [qw/t/],
+		'type'    => [qw/t/]
 	},
 	'args_drop' => {
 		'table'  => [qw/tableName/]
@@ -203,6 +207,37 @@ sub _action_create {
 	push(@q, join(",\n", @cols));
 	push(@q, join(",\n", @idxs));
 	push(@q, ")");
+
+	my @opt_q;
+	# Get table options if we care enough...
+	if ($adj{'collation'} || $self->conf->get_setting('mysql-collation', undef)) {
+		my $collation = $adj{'collation'}{'t'};
+		if (! length $collation) {
+			$collation = $self->conf->get_setting('mysql-collation');
+		}
+		$collation =~ s/[^A-Za-z0-9\-\_]//;
+
+		if (length $collation) {
+			push(@opt_q, "COLLATE " . _q($collation));
+		}
+	}
+
+	if ($adj{'type'} || $self->conf->get_setting('mysql-table-type', undef)) {
+		my $ttype = $adj{'type'}{'t'};
+		if (! length $ttype) {
+			$ttype = $self->conf->get_setting('mysql-table-type');
+		}
+
+		$ttype =~ s/[^A-Za-z0-9\-\_]//;
+
+		if (length $ttype) {
+			push(@opt_q, "ENGINE " . _q($ttype));
+		}
+	}
+
+	if (int @opt_q) {
+		push (@q, join(", ", @opt_q));
+	}
 
 	return join(" ", @q);
 }

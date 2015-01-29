@@ -1,4 +1,4 @@
-package Verses v0.1.0;
+package Verses v0.5.0;
 use strict;
 
 require File::Spec;
@@ -26,6 +26,7 @@ my $verbose = 0;
 sub version { print "$Verses::VERSION\n"; exit 0; }
 
 sub try_migrate { $TRY_MODE = 1; migrate(@_); }
+sub try_rollback { $TRY_MODE = 1; rollback(@_); }
 
 sub migrate {
 	conf();
@@ -78,7 +79,7 @@ sub migrate {
 
 			#$SIG{__DIE__} = sub { print "[X] KA-BOOM! " . @_; print "*Shrugs*"; }; 
 			
-			if ($TRY_MODE) { $TRY_STATE = "^$planStub"; }
+			if ($TRY_MODE) { $TRY_STATE = "^$planStub"; $TRY_STATE =~ s/\^\d+\_/\^/; }
 
 			eval {
 				$plan->up();
@@ -88,6 +89,7 @@ sub migrate {
 
 			if ($@) {
 				print "[X] $planStub: " . _swave($@) . "\n";
+				exit abort();
 			} else {
 				$ENGINE->record_migration($iteration => $planStub) if (! $TRY_MODE);
 				print "[^] $planStub\n";
@@ -154,14 +156,17 @@ sub rollback {
 		} else {
 			my $plan = $planClass->new();
 
+			if ($TRY_MODE) { $TRY_STATE = "v $planStub"; $TRY_STATE =~ s/^v \d+\_//;  }
+
 			eval {
 				$plan->down();
 			};
 
 			if ($@) {
 				print "[X] $planStub: " . _swave($@) . "\n";
+				exit abort();
 			} else {
-				$ENGINE->rollback_migration($rb_iter{$planStub} => $planStub);
+				$ENGINE->rollback_migration($rb_iter{$planStub} => $planStub) if (! $TRY_MODE);
 				print "[v] $planStub\n";
 			}
 		}
@@ -405,9 +410,15 @@ sub _swave {
 	#
 	# Assemble cmds in main scope to simply cmdline perl -e invocation
 	#
-	foreach my $cmd (qw/migrate rollback plan init try_migrate version/) {
+	foreach my $cmd (qw/migrate rollback plan init try_migrate try_rollback version/) {
 		*{'main::' . $cmd} = *{'Verses::' . $cmd};
 	}
+}
+
+sub abort {
+	# We'll probably do more later..
+
+	return 1;
 }
 
 1;
