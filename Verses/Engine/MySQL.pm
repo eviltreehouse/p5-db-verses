@@ -8,7 +8,7 @@ require Data::Dumper;
 my $MIG_TABLENAME = "_verses_migrations";
 
 Verses::Conf::register_setting('mysql-tabletype', 'default tabletype to use');
-Verses::Conf::register_setting('mysql-table-collation', 'collation type');
+Verses::Conf::register_setting('mysql-collation', 'collation type');
 
 my %grammar = (
 	'kw_def' => {

@@ -3,7 +3,11 @@ use strict;
 
 my %KNOWN_SETTINGS = ();
 
+my $cache;
+
 sub new {
+	if (ref $cache) { return $cache; }
+
 	my $self = bless({}, $_[0]);
 
 	$self->{'conf'} = {};
@@ -12,7 +16,16 @@ sub new {
 
 	$self->_load( $_[1] );
 
+	$self->verify_settings();
+
+	$cache = $self;
+
 	return $self;
+}
+
+sub reset {
+	undef $cache;
+	return new(@_);
 }
 
 sub _load {
@@ -32,7 +45,8 @@ sub _load {
 			next; 
 		}
 
-		if ($l =~ m/^\s*\#/) {
+		if ($l =~ m/^\s*\#/ || $l =~ m/^\s+\/\//) {
+			# Permit '#' and '//' comments.
 			next;
 		}
 
@@ -48,7 +62,7 @@ sub _load {
 
 		my $tag = undef;
 
-		if ($ele =~ m/^set\-(.*?)\s+/) {
+		if ($ele =~ m/^set\-(.*?)$/) {
 			my $setting = lc $1;
 
 			$self->{'settings'}{$setting} = $val;
@@ -138,6 +152,23 @@ sub register_setting {
 	my $setting = shift @_;
 
 	$KNOWN_SETTINGS{lc $setting} = $_[0];
+}
+
+sub verify_settings {
+	my $self = shift @_;
+	my $has_unknown = 0;
+
+	foreach my $sk (keys %{ $self->{'settings'} }) {
+		if (! $KNOWN_SETTINGS{$sk}) {
+			print STDERR "[?] setting `$sk` is unknown.\n";
+			$has_unknown++;
+		}
+	}
+
+	if ($has_unknown) {
+		# Extra \n for warnings..
+		print STDERR "\n";
+	}
 }
 
 sub known_settings {
